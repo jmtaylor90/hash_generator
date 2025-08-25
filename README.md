@@ -2,15 +2,13 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A high-performance Rust application and library for generating SHA256 hashes of files.
+A Rust application and library for generating SHA256 hashes of files.
 
 ## Features
 
 - Parallel file processing using Rayon
-- Memory-efficient buffered I/O
 - Multiple output formats (JSON, JSONL, CSV)
-- Progress indicator for large directories
-- Can be used as both a CLI application and a library
+- Can be used as both a CLI application and/or a library
 
 ## Installation
 
@@ -82,20 +80,13 @@ pub struct FileHash {
 pub fn calculate_hash(path: &PathBuf) -> Result<FileHash>
 ```
 
-Calculates the SHA256 hash of a file, returning a `FileHash` struct containing the file's path, hash, and size.
-
-## Performance
-
-- Uses parallel processing for handling multiple files
-- Employs buffered I/O for efficient file reading
-- Streams output to avoid memory overhead with large directories
+Calculates the SHA256 hash of a file, returning a `FileHash` struct containing
+the file's path, hash, and size.
 
 ## Python Bindings
 
 The `hash_generator` library provides Python bindings that allow you to
-leverage Rust's performance in your Python projects. The bindings offer a
-Pythonic interface while maintaining all the benefits of Rust's memory safety
-and parallel processing capabilities.
+leverage Rust's performance in Python projects.
 
 ### Prerequisites
 
@@ -285,18 +276,6 @@ except IOError as e:
     # Handle error appropriately
 ```
 
-### Performance Notes
-
-- The Rust implementation uses buffered I/O for efficient file reading
-- Large files are processed in chunks to minimize memory usage
-- File operations use native Rust implementations for optimal performance
-
-### Thread Safety
-
-The Python bindings are thread-safe and can be used with Python's threading
-and multiprocessing libraries.
-The underlying Rust code handles memory management and concurrency safely.
-
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
@@ -304,3 +283,13 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+## TODO
+
+- Add stdout output for sending hashes to another tool/process
+
+## Notes
+
+This project is a combination of effort of the the authors work and messing around with copilot.
+I am endeavoring to check all the work but some things may slip by as I am figuring out how the
+copilot stuff works.
