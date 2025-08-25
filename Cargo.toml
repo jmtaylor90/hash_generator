@@ -1,0 +1,70 @@
+[package]
+name = "hash_generator"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "A cross-platform tool for generating SHA-256 hashes of files"
+repository = "https://github.com/jmtaylor90/hash_generator"
+
+[profile.release]
+# Enable link-time optimization (LTO)
+lto = true
+# Enable optimizations for size also
+codegen-units = 1
+# Maximum optimization level
+opt-level = 3
+# Strip symbols from binary
+strip = true
+# Enable panic abort instead of unwinding for smaller binary size
+panic = "abort"
+
+[dependencies]
+# Core functionality - SHA256 implementation
+ring = "0.17"
+hex = "0.4"
+
+# Other core functionality
+walkdir = "2.3.3"
+serde = { version = "1.0", features = ["derive"] }
+
+# CLI and output formats
+clap = { version = "4.3", features = ["derive"] }
+serde_json = "1.0"
+csv = "1.2"
+
+# Error handling
+anyhow = "1.0"           # For binary/CLI convenience
+thiserror = "1.0"        # For library structured errors
+
+# Performance and concurrency
+rayon = "1.7"
+indicatif = { version = "0.17", features = ["rayon"] }
+crossbeam-channel = "0.5"
+num_cpus = "1.16"
+
+# Testing utilities
+tempfile = "3.8"         # Used in tests
+
+# Optional Python bindings
+pyo3 = { version = "0.24.1", features = ["extension-module", "abi3-py37"], optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.48", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_Security"
+] }
+
+[lib]
+name = "hash_generator"
+path = "src/lib.rs"
+# Add crate-type for Python extension
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+python = ["pyo3"]
+
+[[bin]]
+name = "hash_generator"
+path = "src/main.rs"
