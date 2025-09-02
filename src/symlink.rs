@@ -205,4 +205,43 @@ mod tests {
         assert!(validate_symlink(&link1, base).is_err());
         Ok(())
     }
+
+    #[test]
+    fn test_broken_symlink_detected() -> Result<()> {
+        let temp = tempdir()?;
+        let base = temp.path();
+
+        let missing_target = base.join("missing.txt");
+        let link = base.join("broken.txt");
+
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&missing_target, &link)?;
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(&missing_target, &link)?;
+
+    let err = validate_symlink(&link, base).unwrap_err();
+    // Broken symlink may fail during canonicalize step or explicit broken check
+    let msg = format!("{}", err);
+    assert!(msg.contains("Failed to get canonical path") || msg.contains("Broken symlink"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_symlink_points_outside_base() -> Result<()> {
+        let base = tempdir()?;
+        let outside = tempdir()?;
+
+        let target = outside.path().join("outside.txt");
+        fs::write(&target, b"content")?;
+
+        let link = base.path().join("link_to_outside.txt");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&target, &link)?;
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(&target, &link)?;
+
+        let err = validate_symlink(&link, base.path()).unwrap_err();
+        assert!(format!("{}", err).contains("outside base directory"));
+        Ok(())
+    }
 }
