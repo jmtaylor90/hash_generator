@@ -431,6 +431,64 @@ mod tests {
     }
 
     #[test]
+    fn test_hasherror_display_variants() {
+        // EmptyFile includes the provided path in message
+        let e1 = HashError::EmptyFile("empty_sample".into());
+        let s1 = format!("{}", e1);
+        assert!(s1.contains("empty_sample"));
+
+        // InvalidPath includes details
+        let e2 = HashError::InvalidPath("invalid_sample".into());
+        let s2 = format!("{}", e2);
+        assert!(s2.contains("invalid_sample"));
+
+        // FileChanged has a stable message
+        let e3 = HashError::FileChanged;
+        let s3 = format!("{}", e3).to_lowercase();
+        assert!(s3.contains("file changed"));
+
+        // IoError wraps underlying message
+        let e4 = HashError::IoError(std::io::Error::new(std::io::ErrorKind::Other, "io_sample"));
+        let s4 = format!("{}", e4);
+        assert!(s4.contains("io_sample"));
+    }
+
+    #[test]
+    fn test_verify_returns_false_when_file_deleted() -> Result<()> {
+        let dir = tempdir()?;
+        let file_path = create_test_file(&dir, "to_delete.txt", b"content");
+
+        let fh = calculate_hash(&file_path)?;
+        // Remove the file, then verify should return false
+        std::fs::remove_file(&file_path)?;
+        assert!(!fh.verify()?);
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_calculate_hash_open_permission_denied() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempdir()?;
+        let file_path = create_test_file(&dir, "no_read.txt", b"content");
+
+        // Remove all permissions to force open() to fail
+        let mut perms = std::fs::metadata(&file_path)?.permissions();
+        perms.set_mode(0o000);
+        std::fs::set_permissions(&file_path, perms.clone())?;
+
+        let err = calculate_hash(&file_path).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(msg.contains("Failed to open file"));
+
+        // Restore permissions so tempdir cleanup can remove the file
+        let mut perms = std::fs::metadata(&file_path)?.permissions();
+        perms.set_mode(0o600);
+        std::fs::set_permissions(&file_path, perms)?;
+        Ok(())
+    }
+
+    #[test]
     fn test_calculate_hash_success() -> Result<()> {
         let dir = tempdir()?;
         let content = b"test content";

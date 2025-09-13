@@ -465,10 +465,82 @@ mod tests {
     }
 
     #[test]
+    fn test_streaming_writer_csv_multiple() -> Result<()> {
+        let dir = tempdir()?;
+        let output_path = dir.path().join("output_multi.csv");
+        let mut writer = StreamingWriter::new(output_path.clone(), "csv".to_string())?;
+
+        let h1 = FileHash::new_for_test(
+            "file1.txt".to_string(),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
+            1,
+        );
+        let h2 = FileHash::new_for_test(
+            "file2.txt".to_string(),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b856".to_string(),
+            2,
+        );
+
+        writer.write_entry(&h1)?;
+        writer.write_entry(&h2)?;
+        writer.finish()?;
+
+        // Verify we can read back both rows
+        let mut reader = csv::Reader::from_path(output_path)?;
+        let mut rows = reader.deserialize::<FileHash>();
+        let r1 = rows.next().unwrap()?;
+        let r2 = rows.next().unwrap()?;
+        assert_eq!(r1.path, h1.path);
+        assert_eq!(r2.path, h2.path);
+        Ok(())
+    }
+
+    #[test]
     fn test_streaming_writer_invalid_format() {
         let dir = tempdir().unwrap();
         let output_path = dir.path().join("output.txt");
         assert!(StreamingWriter::new(output_path, "invalid".to_string()).is_err());
+    }
+
+    #[test]
+    fn test_streaming_writer_invalid_hash_length() {
+        let dir = tempdir().unwrap();
+        let output_path = dir.path().join("out.jsonl");
+        let mut writer = StreamingWriter::new(output_path, "jsonl".to_string()).unwrap();
+
+        // 63 chars (too short)
+        let bad_hash = FileHash::new_for_test("file.txt".to_string(), "a".repeat(63), 1);
+        let err = writer.write_entry(&bad_hash).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(msg.contains("Hash must be 64 hexadecimal characters"));
+    }
+
+    #[test]
+    fn test_streaming_writer_invalid_hash_non_hex() {
+        let dir = tempdir().unwrap();
+        let output_path = dir.path().join("out.jsonl");
+        let mut writer = StreamingWriter::new(output_path, "jsonl".to_string()).unwrap();
+
+        // 64 chars but includes non-hex 'z'
+        let mut s = "a".repeat(63);
+        s.push('z');
+        let bad_hash = FileHash::new_for_test("file.txt".to_string(), s, 1);
+        let err = writer.write_entry(&bad_hash).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(msg.contains("Hash must be 64 hexadecimal characters"));
+    }
+
+    #[test]
+    fn test_streaming_writer_empty_path() {
+        let dir = tempdir().unwrap();
+        let output_path = dir.path().join("out.jsonl");
+        let mut writer = StreamingWriter::new(output_path, "jsonl".to_string()).unwrap();
+
+        let good_hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string();
+        let bad = FileHash::new_for_test("".to_string(), good_hash, 1);
+        let err = writer.write_entry(&bad).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(msg.contains("Path cannot be empty"));
     }
 
     #[test]
@@ -555,6 +627,68 @@ mod tests {
         assert!(content.contains("file1.txt"));
         assert!(content.contains("file2.txt"));
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_process_files_invalid_dir() {
+        let (tx, _rx) = bounded(8);
+        let pb = ProgressBar::new_spinner();
+        let path = PathBuf::from("/path/does/not/exist");
+        let err = process_files(tx, path, pb).unwrap_err();
+        assert!(format!("{}", err).contains("Directory does not exist"));
+    }
+
+    #[test]
+    fn test_process_files_not_a_directory() -> Result<()> {
+        let dir = tempdir()?;
+        let file_path = dir.path().join("file.txt");
+        fs::write(&file_path, b"content")?;
+
+        let (tx, _rx) = bounded(8);
+        let pb = ProgressBar::new_spinner();
+        let err = process_files(tx, file_path.clone(), pb).unwrap_err();
+        assert!(format!("{}", err).contains("Not a directory"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_process_files_symlink_outside_base_is_skipped() -> Result<()> {
+        let base = tempdir()?;
+        let outside = tempdir()?;
+
+        // Create a real file outside the base dir
+        let target = outside.path().join("outside.txt");
+        fs::write(&target, b"content")?;
+
+        // Create a symlink inside base pointing to outside
+        let link = base.path().join("link.txt");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&target, &link)?;
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(&target, &link)?;
+
+        // Also create a regular file that should be hashed
+        let ok_file = base.path().join("ok.txt");
+        fs::write(&ok_file, b"ok")?;
+
+        let (tx, rx) = bounded(16);
+        let pb = ProgressBar::new_spinner();
+        let process_path = base.path().to_path_buf();
+        std::thread::spawn(move || {
+            let _ = process_files(tx, process_path, pb);
+        });
+
+        // Collect results for a short period
+        let mut got = Vec::new();
+        while let Ok(h) = rx.recv_timeout(Duration::from_millis(500)) {
+            got.push(h);
+            if got.len() >= 1 { break; }
+        }
+
+        // We should only see the regular file, not the symlink
+        assert!(got.iter().any(|h| h.path.ends_with("ok.txt")));
+        assert!(!got.iter().any(|h| h.path.ends_with("link.txt")));
         Ok(())
     }
 }
